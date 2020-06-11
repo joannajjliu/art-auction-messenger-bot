@@ -11,3 +11,5 @@ bot starter practice for fb messenger
         curl -X GET "localhost:1337/webhook?hub.verify_token=<YOUR_VERIFY_TOKEN>&hub.challenge=CHALLENGE_ACCEPTED&hub.mode=subscribe"
     - Test webhook:
         - curl -H "Content-Type: application/json" -X POST "localhost:1337/webhook" -d '{"object": "page", "entry": [{"messaging": [{"message": "TEST_MESSAGE"}]}]}'
+### Quick Start App:
+- reference: https://developers.facebook.com/docs/messenger-platform/getting-started/quick-start
