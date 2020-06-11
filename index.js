@@ -12,7 +12,7 @@ const
 
 // Declaring variables:
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
-
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 // Handler functions:
 // Handles messages events
 function handleMessage(sender_psid, received_message) {
@@ -109,8 +109,6 @@ app.post('/webhook', (req, res) => {
 //-- Add webhook verification --
 // Support for GET requests to our webhook
 app.get('/webhook', (req, res) => {
-    let VERIFY_TOKEN = 'me_123';
-
     // Parse the query params:
     let mode = req.query['hub.mode'];
     let token = req.query['hub.verify_token'];
