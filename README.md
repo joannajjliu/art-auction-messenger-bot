@@ -1,5 +1,5 @@
 # art-auction-messenger-bot
-messenger bot for hackathon
+messenger bot for hackathon 
 
 ## Bot set-up steps:
 - Rename ".sample.env" to ".env" and add the required information
