@@ -24,11 +24,34 @@ function handleMessage(sender_psid, received_message) {
     if (received_message.text) {
       // Create the payload for a basic text message
       responses = [
-          Response.genText(`Hi ${sender_firstName}, I'm here to guide you through your first art auction.`),
-          Response.genText("What are you looking to bid on today?")
-        // {
-        //     "text": `Hi ${sender_firstName}, I'm here to guide you through your first art auction.`,
-        // }
+        Response.genText(`Hi ${sender_firstName}, welcome to ArtAuction, where you'll be able to both buy and sell art`),
+        Response.genQuickReply(
+            `What would you like to do today?`, [
+              {
+                  title: "Buy Art",
+                  payload: "buy art"
+              },
+              {
+                  title: "Sell Art",
+                  payload: "sell art"
+              }
+            ])
+        //   Response.genText(`Hi ${sender_firstName}, I'm here to guide you through your first art auction.`),
+        //   Response.genQuickReply(
+        //       "What are you looking to bid on today?", [
+        //         {
+        //             title: "Decorative Art",
+        //             payload: "decorative art"
+        //         },
+        //         {
+        //             title: "Jewelry",
+        //             payload: "jewelry"
+        //         },
+        //         {
+        //             title: "Fine Art",
+        //             payload: "fine art"
+        //         }
+        //       ])
       ];
     } else if (received_message.attachments) {
         // Gets the URL of the message attachment
@@ -56,7 +79,7 @@ function handleMessage(sender_psid, received_message) {
         console.log("isArray");
         let delay = 0;
         for (let response of responses) {
-            callSendAPI(sender_psid, response, delay * 2000);
+            callSendAPI(sender_psid, response, delay * 10000);
             delay++;
         }
         
@@ -78,6 +101,22 @@ function handlePostback(sender_psid, received_postback) {
     } else if (payload === "no") {
         response = { "text": "Oops, try sending another image." }
     }
+    //Send the message to acknowledge the postback
+    callSendAPI(sender_psid, response);
+}
+
+// Handles messaging quick_reply events
+function handleQuickReply(sender_psid, received_quick_reply) {
+    let response;
+
+    //Get the payload for the postback:
+    let payload = received_quick_reply.payload;
+
+    if (payload === "jewelry" || payload === "decorative art" || payload === "fine art")
+    {
+        response = { "text": `What type of ${payload} are you looking for?`}
+    }
+
     //Send the message to acknowledge the postback
     callSendAPI(sender_psid, response);
 }
@@ -137,8 +176,12 @@ app.post('/webhook', (req, res) => {
                     // Check if the event is a message or postback and
                     // pass the event to the appropriate handler function
                     if (webhook_event.message) {
-                        // console.log("sender_firstName: ", sender_firstName);
-                        handleMessage(sender_psid, webhook_event.message);        
+                        if (webhook_event.message.quick_reply) {
+                            handleQuickReply(sender_psid, webhook_event.message.quick_reply);
+                        } else {
+                            // send default start message:
+                            handleMessage(sender_psid, webhook_event.message);
+                        }   
                     } else if (webhook_event.postback) {
                         handlePostback(sender_psid, webhook_event.postback);
                     }
@@ -179,8 +222,16 @@ app.get('/webhook', (req, res) => {
     }
 })
 
-//api query returns sender first name, last name, and profile pic
+// Buy or Sell art functions
+function handleBuyArt() {
 
+}
+
+function handleSellArt() {
+    
+}
+
+//Functions returning sender first name, last name, and profile pic
 async function getUserProfile(sender_psid) {
     try {
       const userProfile = await callUserProfileAPI(sender_psid);
