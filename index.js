@@ -15,47 +15,36 @@ const Response = require("./services/response"),
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 let sender_firstName;
+let sell_art_prompt = 0;
 // Handler functions:
 // Handles messages events
-function handleMessage(sender_psid, received_message) {
+async function handleMessage(sender_psid, received_message) {
     let responses;
-
     // Check if the message contains text
     if (received_message.text) {
-      // Create the payload for a basic text message
-      responses = [
-        Response.genText(`Hi ${sender_firstName}, welcome to ArtAuction, where you'll be able to both buy and sell art`),
-        Response.genQuickReply(
-            `What would you like to do today?`, [
-              {
-                  title: "Buy Art",
-                  payload: "buy art"
-              },
-              {
-                  title: "Sell Art",
-                  payload: "sell art"
-              }
-            ])
-        //   Response.genText(`Hi ${sender_firstName}, I'm here to guide you through your first art auction.`),
-        //   Response.genQuickReply(
-        //       "What are you looking to bid on today?", [
-        //         {
-        //             title: "Decorative Art",
-        //             payload: "decorative art"
-        //         },
-        //         {
-        //             title: "Jewelry",
-        //             payload: "jewelry"
-        //         },
-        //         {
-        //             title: "Fine Art",
-        //             payload: "fine art"
-        //         }
-        //       ])
-      ];
+        if (sell_art_prompt === 0) {//initial prompt
+            // Create the payload for a basic text message
+            responses = [
+                // Response.genText(`Hi ${sender_firstName}, welcome to ArtAuction, where you'll be able to both buy and sell art`),
+                Response.genQuickReply(
+                    `Hi ${sender_firstName}, welcome to ArtAuction, what would you like to do today?`, [
+                    {
+                        title: "Buy Art",
+                        payload: "buy_art"
+                    },
+                    {
+                        title: "Sell Art",
+                        payload: "sell_art"
+                    }
+                    ])
+            ];
+        } else if (sell_art_prompt === 1) {
+            responses = Response.genText("Please upload your art");
+            sell_art_prompt = 0; //reset prompt counter
+        }
     } else if (received_message.attachments) {
         // Gets the URL of the message attachment
-        let attachment_url = received_message.attachments[0].payload.url;
+        const attachment_url = received_message.attachments[0].payload.url;
         responses = Response.genGenericTemplate(
             attachment_url,
             "Is this the right picture?",
@@ -75,34 +64,41 @@ function handleMessage(sender_psid, received_message) {
         );
     }
     // Sends the response message
-    if (Array.isArray(responses)) {
-        console.log("isArray");
-        let delay = 0;
-        for (let response of responses) {
-            callSendAPI(sender_psid, response, delay * 10000);
-            delay++;
-        }
-        
-    } else {
-        callSendAPI(sender_psid, responses, 0);  
-    }
+    sendResponses(sender_psid, responses);
 }
 
 // Handles messaging_postbacks events
 function handlePostback(sender_psid, received_postback) {
-    let response;
-
+    let responses;
     //Get the payload for the postback:
     let payload = received_postback.payload;
-
     //Set the response based on the postback payload
     if (payload === "yes") {
-        response = { "text": "Thanks!" }
+        responses = Response.genButtonTemplate(
+            "What category would you like to label it under?",
+            [
+                {
+                    "type": "postback",
+                    "title": "Painting",
+                    "payload": "sell_painting"
+                },
+                {
+                    "type": "postback",
+                    "title": "Mixed Media",
+                    "payload": "sell_mixed_media"
+                },
+                {
+                    "type": "postback",
+                    "title": "Sculpture",
+                    "payload": "sell_sculpture"
+                }
+            ]
+        );
     } else if (payload === "no") {
-        response = { "text": "Oops, try sending another image." }
+        responses = { "text": "Oops, try sending another image." }
     }
     //Send the message to acknowledge the postback
-    callSendAPI(sender_psid, response);
+    sendResponses(sender_psid, responses);
 }
 
 // Handles messaging quick_reply events
@@ -111,11 +107,19 @@ function handleQuickReply(sender_psid, received_quick_reply) {
 
     //Get the payload for the postback:
     let payload = received_quick_reply.payload;
-
-    if (payload === "jewelry" || payload === "decorative art" || payload === "fine art")
-    {
-        response = { "text": `What type of ${payload} are you looking for?`}
-    }
+    switch (payload) {
+        case "buy_art":
+            handleBuyArt(sender_psid);
+            break;
+        case "sell_art": 
+            handleSellArt(sender_psid);
+            break;
+        case "buy_jewelry":
+        case "buy_decorative_art":
+        case "buy_fine_art":
+            response = { "text": `What type of ${payload} are you looking for?`}
+            break;
+    } 
 
     //Send the message to acknowledge the postback
     callSendAPI(sender_psid, response);
@@ -123,7 +127,6 @@ function handleQuickReply(sender_psid, received_quick_reply) {
 
 // Sends response messages via the Send API
 function callSendAPI(sender_psid, response, delay = 0) {
-
   // Construct the message body
   let request_body = {
     "recipient": {
@@ -144,7 +147,7 @@ function callSendAPI(sender_psid, response, delay = 0) {
             } else {
               console.error("Unable to send message:" + err);
             }
-        }), delay
+        })
     })
 }
   
@@ -167,10 +170,8 @@ app.post('/webhook', (req, res) => {
               
             // Get the sender PSID
             let sender_psid = webhook_event.sender.id;
-            console.log('Sender PSID: ' + sender_psid);
             getUserProfile(sender_psid)
                 .then(userProfile => {
-                    console.log("userProfile :", userProfile);
                     // assign to sender_firstName variable:
                     sender_firstName = userProfile.first_name;
                     // Check if the event is a message or postback and
@@ -186,8 +187,6 @@ app.post('/webhook', (req, res) => {
                         handlePostback(sender_psid, webhook_event.postback);
                     }
                 });
-            
-
         });
 
         //  Returns a '200 OK' response to all requests,
@@ -223,12 +222,54 @@ app.get('/webhook', (req, res) => {
 })
 
 // Buy or Sell art functions
-function handleBuyArt() {
-
+async function handleBuyArt(sender_psid) {
+    let responses;
+    // Create the payload for a basic text message
+    responses = [
+        Response.genQuickReply(
+            "What are you looking to bid on today?", [
+            {
+                title: "Decorative Art",
+                payload: "buy_decorative_art"
+            },
+            {
+                title: "Jewelry",
+                payload: "buy_jewelry"
+            },
+            {
+                title: "Fine Art",
+                payload: "buy_fine_art"
+            }
+            ])
+    ];
+    // Sends the response message
+    sendResponses(sender_psid, responses);
 }
 
-function handleSellArt() {
-    
+function handleSellArt(sender_psid) {
+    sell_art_prompt = 1; //cnter for keeping track of prompts
+    let responses;
+    // Create the payload for a basic text message
+    responses = [
+        Response.genText(
+            `Hi ${sender_firstName}, I'm here to guide you through selling your first art work. 
+What is the title of your artwork?`)
+    ];
+    // Sends the response message
+    sendResponses(sender_psid, responses);
+}
+
+// Helper: send response message
+async function sendResponses(sender_psid, responses) {
+    if (Array.isArray(responses)) {
+        let delay = 0;
+        for (let response of responses) {
+            await callSendAPI(sender_psid, response, delay * 3000);
+            delay++;
+        }
+    } else {
+        callSendAPI(sender_psid, responses, 0);  
+    }
 }
 
 //Functions returning sender first name, last name, and profile pic
@@ -263,7 +304,6 @@ function callUserProfileAPI(sender_psid) {
         method: "GET"
       })
         .on("response", function(response) {
-          // console.log(response.statusCode);
 
           if (response.statusCode !== 200) {
             reject(Error(response.statusCode));
@@ -278,7 +318,6 @@ function callUserProfileAPI(sender_psid) {
         })
         .on("end", () => {
           body = Buffer.concat(body).toString();
-          // console.log(JSON.parse(body));
 
           resolve(JSON.parse(body));
         });

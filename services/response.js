@@ -14,7 +14,7 @@ module.exports = class Response {
                 payload: quickReply["payload"]
             });
         }
-        return response;
+        return response;          
     }
 
     static genGenericTemplate(image_url, title, subtitle, buttons) {
@@ -31,6 +31,21 @@ module.exports = class Response {
                             buttons: buttons
                         }
                     ]
+                }
+            }
+        };
+        return response;
+    }
+
+    static genButtonTemplate(title, buttons) {
+        console.log("genButtonTemplate reached");
+        let response = {
+            attachment: {
+                type: "template",
+                payload: {
+                    template_type: "button",
+                    text: title,
+                    buttons:  buttons
                 }
             }
         };
