@@ -15,3 +15,10 @@ messenger bot for hackathon
         - curl -H "Content-Type: application/json" -X POST "localhost:1337/webhook" -d '{"object": "page", "entry": [{"messaging": [{"message": "TEST_MESSAGE"}]}]}'
 ### Quick Start App:
 - reference: https://developers.facebook.com/docs/messenger-platform/getting-started/quick-start
+
+### Running MongoDB local commands:
+- mongo
+- show dbs
+- Switch to db: use [db name]
+    - Drop db: db.dropDatabase()
+- show collections
