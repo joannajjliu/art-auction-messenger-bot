@@ -22,25 +22,45 @@ async function handleMessage(sender_psid, received_message) {
     let responses;
     // Check if the message contains text
     if (received_message.text) {
-        if (sell_art_prompt === 0) {//initial prompt
-            // Create the payload for a basic text message
-            responses = [
-                // Response.genText(`Hi ${sender_firstName}, welcome to ArtAuction, where you'll be able to both buy and sell art`),
-                Response.genQuickReply(
-                    `Hi ${sender_firstName}, welcome to ArtAuction, what would you like to do today?`, [
-                    {
-                        title: "Buy Art",
-                        payload: "buy_art"
-                    },
-                    {
-                        title: "Sell Art",
-                        payload: "sell_art"
-                    }
-                    ])
-            ];
-        } else if (sell_art_prompt === 1) {
-            responses = Response.genText("Please upload your art");
-            sell_art_prompt = 0; //reset prompt counter
+        switch (sell_art_prompt) {
+            case 0:
+                responses = [
+                    // Response.genText(`Hi ${sender_firstName}, welcome to ArtAuction, where you'll be able to both buy and sell art`),
+                    Response.genQuickReply(
+                        `Hi ${sender_firstName}, welcome to ArtAuction, what would you like to do today?`, [
+                        {
+                            title: "Buy Art",
+                            payload: "buy_art"
+                        },
+                        {
+                            title: "Sell Art",
+                            payload: "sell_art"
+                        }
+                        ])
+                ];
+                break;
+            case 1:
+                responses = Response.genText("Please upload your art");
+                sell_art_prompt = 0; //reset prompt counter
+                break;
+            case 2:
+                responses = Response.genText(
+                    `Perfect, for your artwork created in ${received_message.text}, what are its dimensions?
+Please enter in the format: Height, Width, units`);
+                sell_art_prompt = 3; //price prompt
+                break;
+            case 3:
+                responses = Response.genText(
+                    `Thank you for inputting your artwork's dimensions. Now, what price do you have in mind?
+Please enter in CAD, rounded to the nearest dollar.`)
+                sell_art_prompt = 4; //notification prompt
+                break;
+            case 4:
+                responses = Response.genText(
+                    `Great! Thank you for submitting your artwork and its description and pricing.
+We will set the auction details, and send you a notification on next steps.`);
+                sell_art_prompt = 0; //reset prompt counter
+                break;
         }
     } else if (received_message.attachments) {
         // Gets the URL of the message attachment
@@ -73,30 +93,43 @@ function handlePostback(sender_psid, received_postback) {
     //Get the payload for the postback:
     let payload = received_postback.payload;
     //Set the response based on the postback payload
-    if (payload === "yes") {
-        responses = Response.genButtonTemplate(
-            "What category would you like to label it under?",
-            [
-                {
-                    "type": "postback",
-                    "title": "Painting",
-                    "payload": "sell_painting"
-                },
-                {
-                    "type": "postback",
-                    "title": "Mixed Media",
-                    "payload": "sell_mixed_media"
-                },
-                {
-                    "type": "postback",
-                    "title": "Sculpture",
-                    "payload": "sell_sculpture"
-                }
-            ]
-        );
-    } else if (payload === "no") {
-        responses = { "text": "Oops, try sending another image." }
+    switch (payload) {
+        case "sell_mixed_media":
+        case "sell_painting":
+        case "sell_sculpture":
+            responses = Response.genText(
+                `What year was it created? 
+Please enter the year below.`
+            )
+            sell_art_prompt = 2; // year created prompt
+            break;
+        case "yes":
+            responses = Response.genButtonTemplate(
+                "What category would you like to label it under?",
+                [
+                    {
+                        "type": "postback",
+                        "title": "Painting",
+                        "payload": "sell_painting"
+                    },
+                    {
+                        "type": "postback",
+                        "title": "Mixed Media",
+                        "payload": "sell_mixed_media"
+                    },
+                    {
+                        "type": "postback",
+                        "title": "Sculpture",
+                        "payload": "sell_sculpture"
+                    }
+                ]
+            );
+            break;
+        case "no": 
+            responses = { "text": "Oops, try sending another image." }
+            break;
     }
+
     //Send the message to acknowledge the postback
     sendResponses(sender_psid, responses);
 }
@@ -119,7 +152,7 @@ function handleQuickReply(sender_psid, received_quick_reply) {
         case "buy_fine_art":
             response = { "text": `What type of ${payload} are you looking for?`}
             break;
-    } 
+    }
 
     //Send the message to acknowledge the postback
     callSendAPI(sender_psid, response);
