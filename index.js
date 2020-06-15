@@ -5,8 +5,8 @@ if (process.env.NODE_ENV !== 'production') {
     require('dotenv').config();
 }
 const Response = require("./services/response"),
+    mongoose = require('mongoose'),
     request = require('request'),
-    https = require('https'),
     express = require('express'),
     bodyParser = require('body-parser'),
     app = express().use(bodyParser.json()); //creates express http server
