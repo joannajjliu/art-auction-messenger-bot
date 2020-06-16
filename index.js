@@ -11,6 +11,9 @@ const Response = require("./services/response"),
     bodyParser = require('body-parser'),
     app = express().use(bodyParser.json()); //creates express http server
 
+// Database collection properties:
+let category;
+
 // Declaring variables:
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
@@ -19,6 +22,7 @@ let sell_art_prompt = 0;
 // Handler functions:
 // Handles messages events
 async function handleMessage(sender_psid, received_message) {
+    console.log("category: ", category);
     let responses;
     // Check if the message contains text
     if (received_message.text) {
@@ -102,6 +106,7 @@ function handlePostback(sender_psid, received_postback) {
 Please enter the year below.`
             )
             sell_art_prompt = 2; // year created prompt
+            category = payload; //set for db
             break;
         case "yes":
             responses = Response.genButtonTemplate(

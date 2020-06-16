@@ -22,3 +22,8 @@ messenger bot for hackathon
 - Switch to db: use [db name]
     - Drop db: db.dropDatabase()
 - show collections
+- list all entities in collection: db.[collection name].find()
+
+### Localhost locations:
+- nodeJS app ran at http://localhost:8080
+- mongoDB ran at mongodb://localhost:27017
