@@ -11,8 +11,51 @@ const Response = require("./services/response"),
     bodyParser = require('body-parser'),
     app = express().use(bodyParser.json()); //creates express http server
 
+/* ----------- Database connections: ------------------ */
+// Connecting to database:
+mongoose.connect("mongodb://localhost:27017/artAuctionDB", 
+    {useUnifiedTopology: true, useNewUrlParser: true});
+
+//note: _id is auto created
+const artworkSchema = new mongoose.Schema ({
+    pid: Number, //pid of seller
+    category: String, // Painting, Mixed Media, or Sculpture
+    title: String,
+    imageURL: String,
+    yearCreated: Number,
+    length: Number, //in inches
+    width: Number, //in inches
+    price: Number //in CAD, starting bid price
+});
+
+const personSchema = new mongoose.Schema ({
+    pid: Number,
+    firstName: String,
+    lastName: String,
+    role: String, //seller or buyer
+    artworksToSell: [artworkSchema] //
+});
+
+// artworks collection
+const Artwork = mongoose.model("Artwork", artworkSchema);
+// people collection
+const Person = mongoose.model("Person", personSchema);
+
 // Database collection properties:
-let category;
+let dbPID;
+let dbFirstName;
+let dbLastName;
+let dbRole;
+
+let dbCategory;
+let dbTitle;
+let dbImgURL;
+let dbYrCreated;
+let dbLength;
+let dbWidth;
+//add dbHeight later;
+let dbPrice;
+/* ----------- End of database section: ------------------ */
 
 // Declaring variables:
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
@@ -22,7 +65,7 @@ let sell_art_prompt = 0;
 // Handler functions:
 // Handles messages events
 async function handleMessage(sender_psid, received_message) {
-    console.log("category: ", category);
+    console.log("dbCategory: ", dbCategory);
     let responses;
     // Check if the message contains text
     if (received_message.text) {
@@ -45,30 +88,74 @@ async function handleMessage(sender_psid, received_message) {
                 break;
             case 1:
                 responses = Response.genText("Please upload your art");
+                dbTitle = received_message.text; //artwork title
                 sell_art_prompt = 0; //reset prompt counter
                 break;
             case 2:
                 responses = Response.genText(
-                    `Perfect, for your artwork created in ${received_message.text}, what are its dimensions?
-Please enter in the format: Height, Width, units`);
-                sell_art_prompt = 3; //price prompt
+                    `Perfect, for your artwork created in ${received_message.text}, please enter its LENGTH in INCHES:`);
+                sell_art_prompt = 3; //width prompt
+                dbYrCreated = received_message.text; //yr created
                 break;
             case 3:
                 responses = Response.genText(
-                    `Thank you for inputting your artwork's dimensions. Now, what price do you have in mind?
-Please enter in CAD, rounded to the nearest dollar.`)
-                sell_art_prompt = 4; //notification prompt
+                    `Thank you. Now what is its WIDTH in INCHES`);
+                sell_art_prompt = 4; //price prompt
+                dbLength = received_message.text; //image length
                 break;
             case 4:
+                responses = Response.genText(
+                    `Thank you for inputting your artwork's dimensions! Now for the last step, what price do you have in mind?
+Please enter in CAD, rounded to the nearest dollar.`)
+                sell_art_prompt = 5; //notification prompt
+                dbWidth = received_message.text; //image width
+                break;
+            case 5:
                 responses = Response.genText(
                     `Great! Thank you for submitting your artwork and its description and pricing.
 We will set the auction details, and send you a notification on next steps.`);
                 sell_art_prompt = 0; //reset prompt counter
+                dbPrice = received_message.text; //price in CAD
+                //save to db:
+
+                // const artwork = new Artwork ({
+                //     pid: dbPID,
+                //     category: dbCategory, // Painting, Mixed Media, or Sculpture
+                //     title: dbTitle,
+                //     imageURL: dbImgURL,
+                //     yearCreated: dbYrCreated,
+                //     length: dbLength, //in inches
+                //     width: dbWidth, //in inches
+                //     price: dbPrice //in CAD
+                // })
+                // artwork.save();
+
+                //save to database if not exists, else update existing
+                Artwork.updateOne({pid: dbPID, title: dbTitle}, {
+                        pid: dbPID,
+                        category: dbCategory, // Painting, Mixed Media, or Sculpture
+                        title: dbTitle,
+                        imageURL: dbImgURL,
+                        yearCreated: dbYrCreated,
+                        length: dbLength, //in inches
+                        width: dbWidth, //in inches
+                        price: dbPrice //in CAD
+                    }, {upsert : true}, (err) => {
+                        if (err) {
+                            console.log(err);
+                        } else {
+                            console.log("Successfully updated artwork collection");
+                        }
+                    });
+
+
+
                 break;
         }
     } else if (received_message.attachments) {
         // Gets the URL of the message attachment
-        const attachment_url = received_message.attachments[0].payload.url;
+        const attachment_url = dbImgURL = received_message.attachments[0].payload.url;
+        
         responses = Response.genGenericTemplate(
             attachment_url,
             "Is this the right picture?",
@@ -98,15 +185,15 @@ function handlePostback(sender_psid, received_postback) {
     let payload = received_postback.payload;
     //Set the response based on the postback payload
     switch (payload) {
-        case "sell_mixed_media":
+        case "sell_photography":
         case "sell_painting":
         case "sell_sculpture":
             responses = Response.genText(
                 `What year was it created? 
 Please enter the year below.`
             )
-            sell_art_prompt = 2; // year created prompt
-            category = payload; //set for db
+            sell_art_prompt = 2; // length prompt
+            dbCategory = payload.split('_')[1]; //set for db (photography, painting, sculpture)
             break;
         case "yes":
             responses = Response.genButtonTemplate(
@@ -119,8 +206,8 @@ Please enter the year below.`
                     },
                     {
                         "type": "postback",
-                        "title": "Mixed Media",
-                        "payload": "sell_mixed_media"
+                        "title": "Photography",
+                        "payload": "sell_photography"
                     },
                     {
                         "type": "postback",
@@ -148,13 +235,15 @@ function handleQuickReply(sender_psid, received_quick_reply) {
     switch (payload) {
         case "buy_art":
             handleBuyArt(sender_psid);
+            dbRole = "buy";
             break;
         case "sell_art": 
             handleSellArt(sender_psid);
+            dbRole = "sell";
             break;
-        case "buy_jewelry":
-        case "buy_decorative_art":
-        case "buy_fine_art":
+        case "buy_painting":
+        case "buy_photography":
+        case "buy_sculpture":
             response = { "text": `What type of ${payload} are you looking for?`}
             break;
     }
@@ -204,14 +293,17 @@ app.post('/webhook', (req, res) => {
             // Gets the message, entry.messaging is an array, but
             // will only ever contain one message, so we get index 0
             let webhook_event = entry.messaging[0];
-            console.log("webhook event: ", webhook_event);
+            // console.log("webhook event: ", webhook_event);
               
             // Get the sender PSID
             let sender_psid = webhook_event.sender.id;
+            dbPID = webhook_event.sender.id;
             getUserProfile(sender_psid)
                 .then(userProfile => {
                     // assign to sender_firstName variable:
                     sender_firstName = userProfile.first_name;
+                    dbFirstName = userProfile.first_name;
+                    dbLastName = userProfile.last_name;
                     // Check if the event is a message or postback and
                     // pass the event to the appropriate handler function
                     if (webhook_event.message) {
@@ -267,16 +359,16 @@ async function handleBuyArt(sender_psid) {
         Response.genQuickReply(
             "What are you looking to bid on today?", [
             {
-                title: "Decorative Art",
-                payload: "buy_decorative_art"
+                title: "Painting",
+                payload: "buy_painting"
             },
             {
-                title: "Jewelry",
-                payload: "buy_jewelry"
+                title: "Photography",
+                payload: "buy_photography"
             },
             {
-                title: "Fine Art",
-                payload: "buy_fine_art"
+                title: "Sculpture",
+                payload: "buy_sculpture"
             }
             ])
     ];
@@ -290,9 +382,24 @@ function handleSellArt(sender_psid) {
     // Create the payload for a basic text message
     responses = [
         Response.genText(
-            `Hi ${sender_firstName}, I'm here to guide you through selling your first art work. 
-What is the title of your artwork?`)
+            `Hi ${sender_firstName}, I'm here to guide you through selling your first art work.
+Please note, to update a previously uploaded artwork, please ensure it has the SAME TITLE as what was previously.
+New titles will be recorded as a new artwork.
+Now, what is the title of your artwork?`)
     ];
+    //save to database if not exists, else update existing
+    Person.updateOne({pid: dbPID}, {
+        pid: dbPID,
+        firstName: dbFirstName,
+        lastName: dbLastName,
+        role: dbRole }, {upsert : true}, (err) => {
+            if (err) {
+                console.log(err);
+            } else {
+                console.log("Successfully updated people collection");
+            }
+        });
+
     // Sends the response message
     sendResponses(sender_psid, responses);
 }

@@ -11,7 +11,7 @@ const artworkSchema = new mongoose.Schema ({
     title: String,
     imageURL: String,
     yearCreated: Number,
-    height: Number, //in inches
+    length: Number, //in inches
     width: Number, //in inches
     price: Number //in CAD, starting bid price
 });
@@ -42,7 +42,7 @@ const artwork1 = new Artwork ({
     title: "The moon shines",
     imageURL: "https://myurl.com",
     yearCreated: 1989,
-    height: 50, //in inches
+    length: 50, //in inches
     width: 20, //in inches
     price: 62 //in CAD
 })
@@ -53,7 +53,7 @@ const artwork2 = new Artwork ({
     title: "everything is bring",
     imageURL: "https://myurl.com",
     yearCreated: 2001,
-    height: 60, //in inches
+    length: 60, //in inches
     width: 50, //in inches
     price: 30 //in CAD
 })
