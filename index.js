@@ -61,15 +61,17 @@ let dbPrice;
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 let sender_firstName;
-let sell_art_prompt = 0;
+let art_prompt = 0; //1-19 (sell art), 20+ (buy art)
+let buyerBudget = 1000; //default $1000 CAD
 // Handler functions:
 // Handles messages events
 async function handleMessage(sender_psid, received_message) {
     console.log("dbCategory: ", dbCategory);
+    let alreadySent = false;
     let responses;
     // Check if the message contains text
     if (received_message.text) {
-        switch (sell_art_prompt) {
+        switch (art_prompt) {
             case 0:
                 responses = [
                     // Response.genText(`Hi ${sender_firstName}, welcome to ArtAuction, where you'll be able to both buy and sell art`),
@@ -89,48 +91,34 @@ async function handleMessage(sender_psid, received_message) {
             case 1:
                 responses = Response.genText("Please upload your art");
                 dbTitle = received_message.text; //artwork title
-                sell_art_prompt = 0; //reset prompt counter
+                art_prompt = 0; //reset prompt counter
                 break;
             case 2:
                 responses = Response.genText(
                     `Perfect, for your artwork created in ${received_message.text}, please enter its LENGTH in INCHES:`);
-                sell_art_prompt = 3; //width prompt
+                art_prompt = 3; //width prompt
                 dbYrCreated = received_message.text; //yr created
                 break;
             case 3:
                 responses = Response.genText(
                     `Thank you. Now what is its WIDTH in INCHES`);
-                sell_art_prompt = 4; //price prompt
+                art_prompt = 4; //price prompt
                 dbLength = received_message.text; //image length
                 break;
             case 4:
                 responses = Response.genText(
                     `Thank you for inputting your artwork's dimensions! Now for the last step, what price do you have in mind?
 Please enter in CAD, rounded to the nearest dollar.`)
-                sell_art_prompt = 5; //notification prompt
+                art_prompt = 5; //notification prompt
                 dbWidth = received_message.text; //image width
                 break;
             case 5:
                 responses = Response.genText(
                     `Great! Thank you for submitting your artwork and its description and pricing.
 We will set the auction details, and send you a notification on next steps.`);
-                sell_art_prompt = 0; //reset prompt counter
+                art_prompt = 0; //reset prompt counter
                 dbPrice = received_message.text; //price in CAD
-                //save to db:
-
-                // const artwork = new Artwork ({
-                //     pid: dbPID,
-                //     category: dbCategory, // Painting, Mixed Media, or Sculpture
-                //     title: dbTitle,
-                //     imageURL: dbImgURL,
-                //     yearCreated: dbYrCreated,
-                //     length: dbLength, //in inches
-                //     width: dbWidth, //in inches
-                //     price: dbPrice //in CAD
-                // })
-                // artwork.save();
-
-                //save to database if not exists, else update existing
+                // Save to database if not exists, else update existing
                 Artwork.updateOne({pid: dbPID, title: dbTitle}, {
                         pid: dbPID,
                         category: dbCategory, // Painting, Mixed Media, or Sculpture
@@ -147,9 +135,43 @@ We will set the auction details, and send you a notification on next steps.`);
                             console.log("Successfully updated artwork collection");
                         }
                     });
-
-
-
+                break;
+            case 21: //artworks within budget
+                queryArtworks(received_message.text)
+                .then((result) => {
+                    const firstAction = new Promise((resolve, reject) => {
+                        const firstResponse = Response.genText(
+                            `These are the artworks within ${received_message.text} CAD. 
+Please use the arrow keys on either side of the image, to view more options`
+                        )
+                        sendResponses(sender_psid, firstResponse);
+                        resolve("works");
+                    });
+                    firstAction.then(() => {
+                        console.log("did result carry over? ", result);
+                        const cardsArray = result.map(card => {
+                            return {
+                                title: `${card.title} (c. ${card.yearCreated})`,
+                                subtitle: '$ ' + card.price + ' CAD',
+                                image_url: card.imageURL,
+                                buttons: [
+                                    {
+                                        "type": "postback",
+                                        "title": "Bid on this one!",
+                                        "payload": "buyer_want",
+                                    }
+                                ]
+                            }
+                        })
+                        let secondResponses = Response.genGenericTemplateCarousel(cardsArray);
+                        sendResponses(sender_psid, secondResponses);
+                        art_prompt = 0; //reset prompt
+                    }).catch((err) => console.log(`first msg didn't send correctly: ${err}`))
+                    alreadySent = true;
+                }).catch((err) => {
+                    console.log(`eff you reached another error ${err}`)
+                });
+                
                 break;
         }
     } else if (received_message.attachments) {
@@ -175,8 +197,32 @@ We will set the auction details, and send you a notification on next steps.`);
         );
     }
     // Sends the response message
-    sendResponses(sender_psid, responses);
+    if (!alreadySent) {
+        sendResponses(sender_psid, responses);
+    }
 }
+
+// Query artworks collection for art under budget, returns 3 each time
+async function queryArtworks(budget) {
+    const queriedArtworks = [];
+    const finalResult = await Artwork.find({}, (err) => {
+        if (err) {
+            console.log("error: ", err);
+        }
+    }).then(allArtworks => {
+        allArtworks.map(artwork => {
+            if (artwork.price <= budget) {
+                queriedArtworks.push(artwork);
+            }
+        })
+    }).then(() => {
+        return queriedArtworks;
+    }).catch(() => {
+        console.log("Oh no, error!");
+    })
+    
+    return finalResult;
+};
 
 // Handles messaging_postbacks events
 function handlePostback(sender_psid, received_postback) {
@@ -192,7 +238,7 @@ function handlePostback(sender_psid, received_postback) {
                 `What year was it created? 
 Please enter the year below.`
             )
-            sell_art_prompt = 2; // length prompt
+            art_prompt = 2; // length prompt
             dbCategory = payload.split('_')[1]; //set for db (photography, painting, sculpture)
             break;
         case "yes":
@@ -244,7 +290,8 @@ function handleQuickReply(sender_psid, received_quick_reply) {
         case "buy_painting":
         case "buy_photography":
         case "buy_sculpture":
-            response = { "text": `What type of ${payload} are you looking for?`}
+            response = { "text": `What's your budget for a ${payload.split("_")[1]}? Please enter in CAD, rounded to the nearest dollar.`}
+            art_prompt = 21; //artworks within x budget
             break;
     }
 
@@ -377,7 +424,7 @@ async function handleBuyArt(sender_psid) {
 }
 
 function handleSellArt(sender_psid) {
-    sell_art_prompt = 1; //cnter for keeping track of prompts
+    art_prompt = 1; //cnter for keeping track of prompts
     let responses;
     // Create the payload for a basic text message
     responses = [
@@ -387,8 +434,8 @@ Please note, to update a previously uploaded artwork, please ensure it has the S
 New titles will be recorded as a new artwork.
 Now, what is the title of your artwork?`)
     ];
-    //save to database if not exists, else update existing
-    Person.updateOne({pid: dbPID}, {
+    //save to database if not exists (role AND PID), else update existing
+    Person.updateOne({pid: dbPID, role: dbRole}, {
         pid: dbPID,
         firstName: dbFirstName,
         lastName: dbLastName,

@@ -37,6 +37,26 @@ module.exports = class Response {
         return response;
     }
 
+    static genGenericTemplateCarousel(cardsArray) {
+        let response = {
+            attachment: {
+                type: "template",
+                payload: {
+                    template_type: "generic",
+                    elements: cardsArray.map(card => {
+                        return {
+                            title: card.title,
+                            subtitle: card.subtitle,
+                            image_url: card.image_url,
+                            buttons: card.buttons
+                        }
+                    })
+                }
+            }
+        };
+        return response;
+    }
+
     static genButtonTemplate(title, buttons) {
         console.log("genButtonTemplate reached");
         let response = {
