@@ -13,7 +13,11 @@ const Response = require("./services/response"),
 
 /* ----------- Database connections: ------------------ */
 // Connecting to database:
-mongoose.connect("mongodb://localhost:27017/artAuctionDB", 
+/* Local connection: */
+// mongoose.connect("mongodb://localhost:27017/artAuctionDB", 
+//     {useUnifiedTopology: true, useNewUrlParser: true});
+
+mongoose.connect(`mongodb+srv://admin-joanna:${process.env.ADMIN_PW}@cluster0-yvovv.mongodb.net/artAuctionLiveDB`, 
     {useUnifiedTopology: true, useNewUrlParser: true});
 
 //note: _id is auto created
