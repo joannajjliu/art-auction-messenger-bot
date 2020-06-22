@@ -19,12 +19,15 @@ mongoose.connect("mongodb://localhost:27017/artAuctionDB",
 //note: _id is auto created
 const artworkSchema = new mongoose.Schema ({
     pid: Number, //pid of seller
+    artistFN: String, //seller first name
+    artistSN: String, // seller surname
     category: String, // Painting, Mixed Media, or Sculpture
     title: String,
     imageURL: String,
     yearCreated: Number,
     length: Number, //in inches
     width: Number, //in inches
+    height: Number, //in inches (sculptures only)
     price: Number //in CAD, starting bid price
 });
 
@@ -53,7 +56,7 @@ let dbImgURL;
 let dbYrCreated;
 let dbLength;
 let dbWidth;
-//add dbHeight later;
+let dbHeight = 0; //sculpture only
 let dbPrice;
 /* ----------- End of database section: ------------------ */
 
@@ -62,31 +65,29 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 let sender_firstName;
 let art_prompt = 0; //1-19 (sell art), 20+ (buy art)
-let buyerBudget = 1000; //default $1000 CAD
+let buyer_category;
 // Handler functions:
 // Handles messages events
 async function handleMessage(sender_psid, received_message) {
     console.log("dbCategory: ", dbCategory);
+    console.log("art_prompt: ", art_prompt);
     let alreadySent = false;
     let responses;
     // Check if the message contains text
     if (received_message.text) {
         switch (art_prompt) {
             case 0:
-                responses = [
-                    // Response.genText(`Hi ${sender_firstName}, welcome to ArtAuction, where you'll be able to both buy and sell art`),
-                    Response.genQuickReply(
-                        `Hi ${sender_firstName}, welcome to ArtAuction, what would you like to do today?`, [
-                        {
-                            title: "Buy Art",
-                            payload: "buy_art"
-                        },
-                        {
-                            title: "Sell Art",
-                            payload: "sell_art"
-                        }
-                        ])
-                ];
+                responses = Response.genQuickReply(
+                    `Hi ${sender_firstName}, welcome to ArtAuction, what would you like to do today?`, [
+                    {
+                        title: "Buy Art",
+                        payload: "buy_art"
+                    },
+                    {
+                        title: "Sell Art",
+                        payload: "sell_art"
+                    }
+                ]);
                 break;
             case 1:
                 responses = Response.genText("Please upload your art");
@@ -102,8 +103,16 @@ async function handleMessage(sender_psid, received_message) {
             case 3:
                 responses = Response.genText(
                     `Thank you. Now what is its WIDTH in INCHES`);
-                art_prompt = 4; //price prompt
+                dbCategory === 'sculpture' 
+                ? art_prompt = 31 //height prompt
+                : art_prompt = 4; //price prompt
                 dbLength = received_message.text; //image length
+                break;
+            case 31:
+                responses = Response.genText(
+                    `Thank you. Now what is its HEIGHT in INCHES`);
+                art_prompt = 4; //price prompt
+                dbHeight = received_message.text; //sculpture height
                 break;
             case 4:
                 responses = Response.genText(
@@ -121,12 +130,15 @@ We will set the auction details, and send you a notification on next steps.`);
                 // Save to database if not exists, else update existing
                 Artwork.updateOne({pid: dbPID, title: dbTitle}, {
                         pid: dbPID,
+                        artistFN: dbFirstName,
+                        artistSN: dbLastName,
                         category: dbCategory, // Painting, Mixed Media, or Sculpture
                         title: dbTitle,
                         imageURL: dbImgURL,
                         yearCreated: dbYrCreated,
                         length: dbLength, //in inches
                         width: dbWidth, //in inches
+                        height: dbHeight, //sculptures only
                         price: dbPrice //in CAD
                     }, {upsert : true}, (err) => {
                         if (err) {
@@ -137,7 +149,8 @@ We will set the auction details, and send you a notification on next steps.`);
                     });
                 break;
             case 21: //artworks within budget
-                queryArtworks(received_message.text)
+                console.log("buyer_category: ", buyer_category);
+                queryArtworks(received_message.text, buyer_category) //need to add field for category filtering
                 .then((result) => {
                     const firstAction = new Promise((resolve, reject) => {
                         const firstResponse = Response.genText(
@@ -148,31 +161,30 @@ Please use the arrow keys on either side of the image, to view more options`
                         resolve("works");
                     });
                     firstAction.then(() => {
-                        console.log("did result carry over? ", result);
                         const cardsArray = result.map(card => {
                             return {
-                                title: `${card.title} (c. ${card.yearCreated})`,
-                                subtitle: '$ ' + card.price + ' CAD',
+                                title: `${card.title}, ${card.yearCreated} by ${card.artistFN} ${card.artistSN}`,
+                                subtitle: `$${card.price} CAD (${card.width} x ${card.length} ${card.height !== 0 ? (" x " + card.height + "in") : "in"})`,
                                 image_url: card.imageURL,
                                 buttons: [
                                     {
                                         "type": "postback",
                                         "title": "Bid on this one!",
-                                        "payload": "buyer_want",
+                                        "payload": `buyer_want,${card.title},${card._id}`,
                                     }
                                 ]
                             }
                         })
                         let secondResponses = Response.genGenericTemplateCarousel(cardsArray);
                         sendResponses(sender_psid, secondResponses);
-                        art_prompt = 0; //reset prompt
+                        art_prompt = 0; //reset
                     }).catch((err) => console.log(`first msg didn't send correctly: ${err}`))
                     alreadySent = true;
                 }).catch((err) => {
                     console.log(`eff you reached another error ${err}`)
                 });
-                
                 break;
+
         }
     } else if (received_message.attachments) {
         // Gets the URL of the message attachment
@@ -202,8 +214,8 @@ Please use the arrow keys on either side of the image, to view more options`
     }
 }
 
-// Query artworks collection for art under budget, returns 3 each time
-async function queryArtworks(budget) {
+// Query artworks collection for art of 'category', under 'budget', returns 3 each time'
+async function queryArtworks(budget, category) {
     const queriedArtworks = [];
     const finalResult = await Artwork.find({}, (err) => {
         if (err) {
@@ -211,12 +223,12 @@ async function queryArtworks(budget) {
         }
     }).then(allArtworks => {
         allArtworks.map(artwork => {
-            if (artwork.price <= budget) {
+            if (artwork.price <= budget && artwork.category === category) {
                 queriedArtworks.push(artwork);
             }
         })
     }).then(() => {
-        return queriedArtworks;
+        return queriedArtworks.slice(0,3); // hardcoded, returns only first 3 elems, if available
     }).catch(() => {
         console.log("Oh no, error!");
     })
@@ -228,9 +240,17 @@ async function queryArtworks(budget) {
 function handlePostback(sender_psid, received_postback) {
     let responses;
     //Get the payload for the postback:
-    let payload = received_postback.payload;
+    let payload = received_postback.payload.split(",")[0];
     //Set the response based on the postback payload
     switch (payload) {
+        case "buyer_want":
+            const artworkTitle = received_postback.payload.split(",")[1];
+            const artworkId = received_postback.payload.split(",")[2];
+            responses = Response.genText(
+                `Thank you for selecting "${artworkTitle}". We will notify you when the bidding will start.`
+            );
+            art_prompt = 0; // reset
+            break;
         case "sell_photography":
         case "sell_painting":
         case "sell_sculpture":
@@ -262,6 +282,7 @@ Please enter the year below.`
                     }
                 ]
             );
+            dbHeight = 0; //reset height
             break;
         case "no": 
             responses = { "text": "Oops, try sending another image." }
@@ -290,6 +311,7 @@ function handleQuickReply(sender_psid, received_quick_reply) {
         case "buy_painting":
         case "buy_photography":
         case "buy_sculpture":
+            buyer_category = payload.split("_")[1]; //store buyer_category
             response = { "text": `What's your budget for a ${payload.split("_")[1]}? Please enter in CAD, rounded to the nearest dollar.`}
             art_prompt = 21; //artworks within x budget
             break;
@@ -300,7 +322,7 @@ function handleQuickReply(sender_psid, received_quick_reply) {
 }
 
 // Sends response messages via the Send API
-function callSendAPI(sender_psid, response, delay = 0) {
+function callSendAPI(sender_psid, response) {
   // Construct the message body
   let request_body = {
     "recipient": {
@@ -309,20 +331,21 @@ function callSendAPI(sender_psid, response, delay = 0) {
     "message": response
   }
     // Send the HTTP request to the Messenger Platform
-    setTimeout(() => {
-        request({
-            "uri": "https://graph.facebook.com/v2.6/me/messages",
-            "qs": { "access_token": process.env.PAGE_ACCESS_TOKEN },
-            "method": "POST",
-            "json": request_body
-        }, (err, res, body) => {
-            if (!err) {
-              console.log('message sent!')
-            } else {
-              console.error("Unable to send message:" + err);
-            }
-        })
-    })
+
+    // setTimeout(() => {
+    request({
+        "uri": "https://graph.facebook.com/v2.6/me/messages",
+        "qs": { "access_token": process.env.PAGE_ACCESS_TOKEN },
+        "method": "POST",
+        "json": request_body
+    }, (err, res, body) => {
+        if (!err) {
+            console.log('message sent!')
+        } else {
+            console.error("Unable to send message:" + err);
+        }
+    });
+    // })
 }
   
 // Set server port and log message on success
@@ -340,7 +363,7 @@ app.post('/webhook', (req, res) => {
             // Gets the message, entry.messaging is an array, but
             // will only ever contain one message, so we get index 0
             let webhook_event = entry.messaging[0];
-            // console.log("webhook event: ", webhook_event);
+            console.log("webhook event: ", webhook_event);
               
             // Get the sender PSID
             let sender_psid = webhook_event.sender.id;
@@ -402,23 +425,21 @@ app.get('/webhook', (req, res) => {
 async function handleBuyArt(sender_psid) {
     let responses;
     // Create the payload for a basic text message
-    responses = [
-        Response.genQuickReply(
-            "What are you looking to bid on today?", [
-            {
-                title: "Painting",
-                payload: "buy_painting"
-            },
-            {
-                title: "Photography",
-                payload: "buy_photography"
-            },
-            {
-                title: "Sculpture",
-                payload: "buy_sculpture"
-            }
-            ])
-    ];
+    responses = Response.genQuickReply (
+        "What are you looking to bid on today?", [
+        {
+            title: "Painting",
+            payload: "buy_painting"
+        },
+        {
+            title: "Photography",
+            payload: "buy_photography"
+        },
+        {
+            title: "Sculpture",
+            payload: "buy_sculpture"
+        }
+    ]);
     // Sends the response message
     sendResponses(sender_psid, responses);
 }
@@ -427,13 +448,11 @@ function handleSellArt(sender_psid) {
     art_prompt = 1; //cnter for keeping track of prompts
     let responses;
     // Create the payload for a basic text message
-    responses = [
-        Response.genText(
+    responses = Response.genText(
             `Hi ${sender_firstName}, I'm here to guide you through selling your first art work.
 Please note, to update a previously uploaded artwork, please ensure it has the SAME TITLE as what was previously.
 New titles will be recorded as a new artwork.
-Now, what is the title of your artwork?`)
-    ];
+Now, what is the title of your artwork?`);
     //save to database if not exists (role AND PID), else update existing
     Person.updateOne({pid: dbPID, role: dbRole}, {
         pid: dbPID,
@@ -453,15 +472,15 @@ Now, what is the title of your artwork?`)
 
 // Helper: send response message
 async function sendResponses(sender_psid, responses) {
-    if (Array.isArray(responses)) {
-        let delay = 0;
-        for (let response of responses) {
-            await callSendAPI(sender_psid, response, delay * 3000);
-            delay++;
-        }
-    } else {
-        callSendAPI(sender_psid, responses, 0);  
-    }
+    // if (Array.isArray(responses)) {
+    //     let delay = 0;
+    //     for (let response of responses) {
+    //         await callSendAPI(sender_psid, response, delay * 3000);
+    //         delay++;
+    //     }
+    // } else {
+        callSendAPI(sender_psid, responses);  
+    // }
 }
 
 //Functions returning sender first name, last name, and profile pic
